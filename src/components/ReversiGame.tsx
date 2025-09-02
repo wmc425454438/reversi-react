@@ -651,7 +651,21 @@ const ReversiGame: React.FC = () => {
     setUsedCards(new Set()); // 重置已使用的卡牌
     setSelectedCard(null);
     setExpandedCard(null);
-    initGame();
+    setHoveredCard(null);
+    setIsDragging(false);
+    setDragPosition({ x: 0, y: 0 });
+    
+    // 重置游戏状态
+    setGameState(prev => ({
+      ...prev,
+      gameOver: false,
+      lastMove: 1
+    }));
+    
+    // 延迟调用initGame，确保状态更新完成
+    setTimeout(() => {
+      initGame();
+    }, 100);
   };
 
   // 切换3D模式
@@ -780,8 +794,28 @@ const ReversiGame: React.FC = () => {
     setIsDragging(false);
   };
 
+  // 处理点击空白区域取消选择卡牌
+  const handleContainerClick = (e: React.MouseEvent) => {
+    // 如果点击的是容器本身（空白区域），则取消选择卡牌
+    if (e.target === e.currentTarget) {
+      setSelectedCard(null);
+    }
+  };
+
+  // 处理触摸空白区域取消选择卡牌
+  const handleContainerTouchStart = (e: React.TouchEvent) => {
+    // 如果触摸的是容器本身（空白区域），则取消选择卡牌
+    if (e.target === e.currentTarget) {
+      setSelectedCard(null);
+    }
+  };
+
   return (
-    <div className={`reversi-container ${gameState.threeDimensionsOn ? 'three-dimensions-on' : ''}`}>
+    <div 
+      className={`reversi-container ${gameState.threeDimensionsOn ? 'three-dimensions-on' : ''}`}
+      onClick={handleContainerClick}
+      onTouchStart={handleContainerTouchStart}
+    >
       {/* 玩家1血条 */}
       <div className="player">
         <div 
@@ -922,11 +956,59 @@ const ReversiGame: React.FC = () => {
 
       {/* 游戏结束弹窗 */}
       {gameOverModalVisible && (
-        <div className="modal-overlay">
-          <div className="modal">
+        <div 
+          className="modal-overlay"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999
+          }}
+        >
+          <div 
+            className="modal"
+            style={{
+              background: 'white',
+              padding: '20px',
+              borderRadius: '12px',
+              textAlign: 'center',
+              maxWidth: '300px',
+              width: '80%'
+            }}
+          >
             <h3>游戏结束</h3>
             <p>重新开始吧！</p>
-            <button onClick={restartGame}>重新开始</button>
+            <button 
+              type="button"
+              style={{ 
+                cursor: 'pointer',
+                padding: '10px 20px',
+                background: 'linear-gradient(135deg, #667eea, #764ba2)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '20px',
+                fontSize: '14px',
+                fontWeight: 'bold',
+                touchAction: 'manipulation'
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                console.log('触摸结束，调用重新开始');
+                restartGame();
+              }}
+              onClick={() => {
+                console.log('按钮被点击了！');
+                restartGame();
+              }}
+            >
+              重新开始
+            </button>
           </div>
         </div>
       )}

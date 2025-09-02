@@ -63,16 +63,15 @@ html, body {
 
 .desk-table table {
   border-collapse: collapse;
-  background: #8B4513;
+  background: transparent;
   border: 3px solid #654321;
   width: 100%;
   height: 100%;
 }
 
 .desk-table td {
-  /* 动态计算格子大小 */
-  width: calc(100% / 6);
-  height: calc(100% / 6);
+  width: 54px;
+  height: 54px;
   border: 1px solid #654321;
   padding: 0;
   cursor: pointer;
@@ -80,8 +79,26 @@ html, body {
   position: relative;
 }
 
+/* 棋盘格子交替背景色 */
+.desk-table tr:nth-child(odd) td:nth-child(odd) {
+  background-color: #8B4513; /* 深棕色 */
+}
+
+.desk-table tr:nth-child(odd) td:nth-child(even) {
+  background-color: #A0522D; /* 浅棕色 */
+}
+
+.desk-table tr:nth-child(even) td:nth-child(odd) {
+  background-color: #A0522D; /* 浅棕色 */
+}
+
+.desk-table tr:nth-child(even) td:nth-child(even) {
+  background-color: #8B4513; /* 深棕色 */
+}
+
 .desk-table td:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.2) !important;
+  box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.3);
 }
 
 .element {
@@ -94,17 +111,12 @@ html, body {
 }
 
 .chess {
-  /* 动态计算棋子大小 */
-  width: 80%;
-  height: 80%;
+  width: 10px;
+  height: 10px;
+  padding: 17px;
   border-radius: 50%;
-  border: 3px solid #333;
   position: relative;
   transition: all 0.3s ease;
-  min-width: 30px;
-  min-height: 30px;
-  max-width: 60px;
-  max-height: 60px;
 }
 
 .chess-orange {
@@ -232,46 +244,67 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 9999;
+  pointer-events: auto;
 }
 
 .modal {
   background: white;
-  padding: 30px;
-  border-radius: 15px;
+  padding: 20px;
+  border-radius: 12px;
   text-align: center;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-  max-width: 400px;
-  width: 90%;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+  max-width: 300px;
+  width: 80%;
+  pointer-events: auto;
+  position: relative;
+  z-index: 10000;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .modal h3 {
-  margin: 0 0 15px 0;
+  margin: 0 0 12px 0;
   color: #333;
-  font-size: 24px;
+  font-size: 20px;
 }
 
 .modal p {
-  margin: 0 0 20px 0;
+  margin: 0 0 15px 0;
   color: #666;
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .modal button {
-  padding: 12px 24px;
+  padding: 10px 20px;
   background: linear-gradient(135deg, #667eea, #764ba2);
   color: white;
   border: none;
-  border-radius: 25px;
+  border-radius: 20px;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: bold;
   transition: all 0.3s ease;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .modal button:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 12px rgba(102, 126, 234, 0.4);
+}
+
+.modal button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.4);
+}
+
+.modal button:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
 }
 
 /* 3D效果 */
@@ -311,7 +344,7 @@ html, body {
   height: clamp(120px, 25vh, 200px);
   text-align: center;
   color: white;
-  margin-top: auto;
+  margin-top: 50px;
 }
 
 .card-section h3 {
@@ -331,8 +364,8 @@ html, body {
 
 .character-card {
   position: absolute;
-  width: clamp(80px, 20vw, 120px);
-  height: clamp(120px, 25vh, 200px);
+  width: 80px;
+  height: 140px;
   background: linear-gradient(135deg, #2c3e50, #34495e);
   border: 2px solid #3498db;
   border-radius: 10px;
@@ -429,17 +462,14 @@ html, body {
   z-index: 10 !important;
 }
 
-.character-card:hover {
+/* .character-card:hover {
+} */
+
+.character-card.selected {
   transform: translateY(-20px) scale(1.1) rotate(0deg) !important;
   box-shadow: 0 0 20px rgba(243, 156, 18, 0.6);
   border-color: #f39c12;
   z-index: 10 !important;
-}
-
-.character-card.selected {
-  /* border-color: #f39c12;
-  box-shadow: 0 0 20px rgba(243, 156, 18, 0.6); */
-  /* z-index: 10; */
 }
 
 .character-card.expanded {

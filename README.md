@@ -1,4 +1,4 @@
-# Figma React 项目
+# Reversi React 项目
 
 这是一个基于React和TypeScript的项目，包含多个组件示例。
 
