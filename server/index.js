@@ -34,7 +34,8 @@ class GameManager {
       maxPlayers: 2,
       gameState: null,
       isGameStarted: false,
-      currentPlayer: null
+      currentPlayer: null,
+      joinedInGame: new Set()
     };
     
     this.rooms.set(roomId, room);
@@ -52,6 +53,7 @@ class GameManager {
     }
     
     room.players.push(player);
+    room.joinedInGame = room.joinedInGame || new Set();
     return room;
   }
 
@@ -76,6 +78,7 @@ class GameManager {
     
     room.isGameStarted = true;
     room.currentPlayer = room.players[0].id;
+    room.joinedInGame = new Set();
     
     // 初始化游戏状态
     room.gameState = {
@@ -95,19 +98,108 @@ class GameManager {
     if (!room || !room.isGameStarted) {
       throw new Error('游戏未开始');
     }
+    if (room.gameState?.gameOver) {
+      throw new Error('游戏已结束');
+    }
     
     // 验证移动是否合法
     if (room.currentPlayer !== move.playerId) {
       throw new Error('不是您的回合');
     }
-    
-    // 处理移动逻辑（这里需要实现具体的游戏逻辑）
-    // 更新游戏状态
-    // 切换当前玩家
-    
-    room.currentPlayer = room.players.find(p => p.id !== move.playerId)?.id;
-    room.gameState.currentPlayer = room.currentPlayer;
-    
+    // 推断当前玩家棋子类型（players[0] -> 1, players[1] -> 2）
+    const myType = room.players[0].id === move.playerId ? 1 : 2;
+    const enemyType = myType === 1 ? 2 : 1;
+
+    // 构造新棋盘（不包含可落子标记3），保留已有角色
+    const oldBoard = room.gameState.tableArr || [];
+    const size = oldBoard.length || 6;
+    const newBoard = Array.from({ length: size }, (_, i) =>
+      Array.from({ length: size }, (_, j) => {
+        const cell = oldBoard[i]?.[j] || { type: 0, reversal: true, character: {} };
+        // 清理客户端可能带来的 3 标记；保留已有角色
+        return { type: cell.type === 3 ? 0 : cell.type, reversal: true, character: cell.character || {} };
+      })
+    );
+
+    const { row, col, character } = move;
+    if (
+      row < 0 || row >= size ||
+      col < 0 || col >= size ||
+      newBoard[row][col].type !== 0
+    ) {
+      throw new Error('非法落子');
+    }
+
+    // 放置棋子（写入角色）
+    newBoard[row][col] = { type: myType, reversal: true, character: character || {} };
+
+    // 翻转逻辑（8方向）
+    const directions = [
+      [-1, 0], [1, 0], [0, -1], [0, 1],
+      [-1, -1], [-1, 1], [1, -1], [1, 1]
+    ];
+    let totalComboDamage = 0;
+    for (const [dx, dy] of directions) {
+      let x = row + dx;
+      let y = col + dy;
+      const toFlip = [];
+      while (x >= 0 && x < size && y >= 0 && y < size) {
+        const t = newBoard[x][y].type;
+        if (t === enemyType) {
+          toFlip.push([x, y]);
+          x += dx; y += dy;
+          continue;
+        }
+        if (t === myType) {
+          // 若封口格带有角色且包含 _combo，则结算连击伤害
+          const closerCell = newBoard[x][y];
+          if (closerCell && closerCell.character && typeof closerCell.character === 'object' && '_combo' in closerCell.character) {
+            const combo = Number(closerCell.character._combo || 0);
+            if (!Number.isNaN(combo) && combo > 0) {
+              totalComboDamage += combo;
+            }
+          }
+          // 翻转中间的敌子并清空其角色
+          for (const [fx, fy] of toFlip) {
+            newBoard[fx][fy] = { type: myType, reversal: true, character: {} };
+          }
+        }
+        break;
+      }
+    }
+
+    // 伤害计算：落子攻击 + 连击伤害（与本地一致）
+    const attack = Number((character && character._attack) || 0) || 0;
+    const totalDamage = attack + totalComboDamage;
+    // 更新对方血量
+    if (myType === 1) {
+      const hp = Math.max(0, (room.gameState.player2?._hp ?? 120) - totalDamage);
+      room.gameState.player2 = { ...(room.gameState.player2 || { _name: room.players[1].name }), _hp: hp };
+      if (hp <= 0) room.gameState.gameOver = true;
+    } else {
+      const hp = Math.max(0, (room.gameState.player1?._hp ?? 120) - totalDamage);
+      room.gameState.player1 = { ...(room.gameState.player1 || { _name: room.players[0].name }), _hp: hp };
+      if (hp <= 0) room.gameState.gameOver = true;
+    }
+
+    // 切换当前玩家与 lastMove；若游戏结束则不再切换并停止对局
+    if (room.gameState.gameOver) {
+      room.isGameStarted = false;
+      room.gameState = {
+        ...room.gameState,
+        tableArr: newBoard
+      };
+    } else {
+      const nextPlayer = room.players.find(p => p.id !== move.playerId);
+      room.currentPlayer = nextPlayer?.id;
+      room.gameState = {
+        ...room.gameState,
+        tableArr: newBoard,
+        lastMove: myType === 1 ? 2 : 1,
+        currentPlayer: room.currentPlayer
+      };
+    }
+
     return room;
   }
 
@@ -174,6 +266,11 @@ io.on('connection', (socket) => {
       const room = gameManager.makeMove(player.roomId, move);
       if (room) {
         io.to(player.roomId).emit('game-state-update', room.gameState);
+        if (room.gameState.gameOver) {
+          io.to(player.roomId).emit('game-over', {
+            winner: room.players.find(p => p.id === room.currentPlayer)?.name || ''
+          });
+        }
       }
     } catch (error) {
       socket.emit('error', error.message);
@@ -187,20 +284,36 @@ io.on('connection', (socket) => {
   // 所以 players.get(socket.id) 总是获取到当前发起请求的玩家对象
   socket.on('start-game', () => {
     try {
-      console.log('start-game players', Array.from(players.entries()));
-      // 获取当前发起 start-game 的玩家
       const player = players.get(socket.id);
-      console.log('current player', player);
       if (!player) return;
-
-      // player.roomId 是该玩家所在房间
-      const room = gameManager.startGame(player.roomId);
+      const room = gameManager.rooms.get(player.roomId);
       if (room) {
-        // 通知房间内所有玩家游戏开始
-        io.to(player.roomId).emit('game-start', room.gameState);
+        // 第一步：先让双方进入游戏界面
+        io.to(player.roomId).emit('enter-game', {
+          roomId: room.id,
+          players: room.players,
+          name: room.name,
+          maxPlayers: room.maxPlayers
+        });
       }
     } catch (error) {
       socket.emit('error', error.message);
+    }
+  });
+
+  // 客户端进入游戏界面后上报
+  socket.on('game-join', () => {
+    const player = players.get(socket.id);
+    if (!player) return;
+    const room = gameManager.rooms.get(player.roomId);
+    if (!room) return;
+    room.joinedInGame = room.joinedInGame || new Set();
+    room.joinedInGame.add(player.id);
+    if (room.joinedInGame.size >= room.maxPlayers) {
+      const started = gameManager.startGame(player.roomId);
+      if (started) {
+        io.to(player.roomId).emit('game-start', started.gameState);
+      }
     }
   });
   

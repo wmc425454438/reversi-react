@@ -88,6 +88,11 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
     calculateMoveableArea(board, 1);
   }, [calculateMoveableArea]);
 
+  // 通知后端：我已进入游戏界面，等待双方都进入后再开始
+  useEffect(() => {
+    NetworkService.joinGameView?.();
+  }, []);
+
   // 查找可移动位置
   const findMoveablePositions = (board: ChessPiece[][], row: number, col: number, playerType: number) => {
     const enemyType = playerType === 1 ? 2 : 1;
@@ -144,6 +149,65 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
 
     // 发送移动到服务器
     NetworkService.sendMove(move);
+
+    // 本地乐观更新：放置棋子、翻转、切换回合、标记卡牌已用、计算对手可落子区
+    const myType = room.players[0]?.id === currentPlayer?.id ? 1 : 2;
+    const nextPlayerType = myType === 1 ? 2 : 1;
+
+    const newBoard: ChessPiece[][] = gameState.tableArr.map(r => r.map(c => ({ ...c })));
+    // 放置棋子
+    newBoard[row][col] = {
+      type: myType,
+      reversal: true,
+      character: selectedCard as Character
+    };
+
+    // 翻转棋子（按8方向规则）
+    const enemyType = myType === 1 ? 2 : 1;
+    const directions = [
+      [-1, 0], [1, 0], [0, -1], [0, 1],
+      [-1, -1], [-1, 1], [1, -1], [1, 1]
+    ];
+    for (const [dx, dy] of directions) {
+      let x = row + dx;
+      let y = col + dy;
+      const toFlip: Array<[number, number]> = [];
+      while (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE) {
+        const t = newBoard[x][y].type;
+        if (t === enemyType) {
+          toFlip.push([x, y]);
+          x += dx; y += dy;
+          continue;
+        }
+        if (t === myType) {
+          // 封口，翻转
+          for (const [fx, fy] of toFlip) {
+            newBoard[fx][fy] = {
+              type: myType,
+              reversal: true,
+              character: {}
+            } as ChessPiece;
+          }
+        }
+        break;
+      }
+    }
+
+    // 切换玩家与更新状态
+    setGameState(prev => ({
+      ...prev,
+      tableArr: newBoard,
+      lastMove: nextPlayerType
+    }));
+
+    // 标记卡牌为已用
+    setUsedCards(prev => new Set([...prev, (selectedCard as Character)._name]));
+
+    // 计算对手的可落子区域
+    calculateMoveableArea(newBoard, nextPlayerType);
+
+    // 本地结束本回合
+    setIsMyTurn(false);
 
     // 清除选中的卡牌
     setSelectedCard(null);
@@ -254,11 +318,6 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
       e.preventDefault();
       return;
     }
-    // 设置拖拽数据，确保浏览器触发 drop 事件
-    try {
-      e.dataTransfer?.setData('application/x-reversi-card', JSON.stringify({ name: character._name }));
-      e.dataTransfer!.effectAllowed = 'move';
-    } catch {}
     setSelectedCard(character);
     setIsDragging(true);
     setDragPosition({ x: e.clientX, y: e.clientY });
@@ -306,9 +365,6 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
   // 桌面拖拽：阻止默认以允许 drop
   const handleBoardDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    try {
-      e.dataTransfer!.dropEffect = 'move';
-    } catch {}
   };
 
   // 桌面拖拽：放置

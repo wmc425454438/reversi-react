@@ -25,16 +25,6 @@
 - **Canvas动画**：使用Canvas绘制连线效果
 - **响应式设计**：支持移动端和桌面端
 
-### 网络对战 (NetworkReversiGame)
-
-基于 Socket.io 的实时对战：
-
-- 房间系统：创建/加入同一房间后，二人对战
-- 实时同步：服务端转发状态，客户端同步棋盘与回合
-- 回合提示：界面显示“当前回合: 您/对手”
-- 可落子提示：绿色落子区域（8方向规则计算）
-- 落子方式：点击绿色格子或将手牌拖拽/触摸拖拽到绿色格子
-
 #### 游戏规则
 
 1. 两名玩家轮流下棋
@@ -58,28 +48,6 @@ function App() {
 }
 ```
 
-#### 网络对战使用方法
-
-```tsx
-import MainMenu from './components/MainMenu';
-
-function App() {
-  return (
-    <div>
-      <MainMenu />
-    </div>
-  );
-}
-```
-
-步骤：
-
-1. 启动后端（见下方“启动后端服务器”）
-2. 打开页面 → 选择“网络对战”
-3. 两名玩家输入相同房间ID并加入
-4. 房间内显示两人后，点击“开始游戏”（先进入对局，再发送开始指令）
-5. 显示“当前回合: 您”的一侧选择手牌并在绿色格子落子（可点击或拖拽）
-
 ### 其他组件
 
 - `HeaderDemo`：头部组件示例
@@ -98,16 +66,6 @@ npm install
 ```bash
 npm run dev
 ```
-
-### 启动后端服务器
-
-```bash
-node server/index.js
-```
-
-默认地址：前端 `http://localhost:5173`，后端 `http://localhost:3001`。
-
-若 Node 报 “require is not defined”，说明在 ESM 模式运行，请使用 `import` 语法（本仓库已使用）或把文件改名为 `.cjs`。
 
 ### 构建生产版本
 
@@ -128,7 +86,6 @@ npm run lint
 - **构建工具**：Vite
 - **样式**：Tailwind CSS + 自定义CSS
 - **代码质量**：ESLint
- - **实时通信**：Socket.io（WebSocket）
 
 ## 项目结构
 
@@ -137,9 +94,8 @@ src/
 ├── components/          # React组件
 │   ├── ReversiGame.tsx # 翻转棋游戏主组件
 │   ├── ReversiGame.css # 游戏样式
-│   ├── MainMenu.tsx     # 菜单（本地/网络）
-│   ├── RoomManager.tsx  # 房间管理
-│   └── NetworkReversiGame.tsx # 网络对战
+│   ├── HeaderDemo.tsx  # 头部组件示例
+│   └── OrderSummary.tsx# 订单摘要组件
 ├── models/              # 数据模型
 │   ├── Player.ts       # 玩家类
 │   └── characters/     # 角色定义
@@ -147,8 +103,6 @@ src/
 │   └── reversi.ts      # 游戏相关类型
 ├── App.tsx             # 主应用组件
 └── main.tsx            # 应用入口
-server/
-└── index.js            # 后端（Express + Socket.io）
 ```
 
 ## 浏览器支持
@@ -161,10 +115,3 @@ server/
 ## 许可证
 
 MIT
-
-## 调试与排查
-
-- 前端断点：Chrome DevTools → Sources → 断在 `NetworkReversiGame.tsx` 的 `game-start`/`game-state-update`、`moveChess`、`calculateMoveableArea`、`findMoveablePositions`、拖拽/触摸事件处理
-- 常见问题：
-  - 没有绿色落子区：确认“当前回合: 您”；两端进入同一房间并开始；后端已运行
-  - 拖拽无响应：将手牌拖至绿色格子；或直接点击绿色格子

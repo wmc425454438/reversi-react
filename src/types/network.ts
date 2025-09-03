@@ -42,6 +42,7 @@ export interface SocketEvents {
   'player-left': (playerId: string) => void;
   
   // 游戏相关
+  'enter-game': (payload: any) => void;
   'game-start': (gameState: NetworkGameState) => void;
   'game-move': (move: NetworkMove) => void;
   'game-state-update': (gameState: NetworkGameState) => void;

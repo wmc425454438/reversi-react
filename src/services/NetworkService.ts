@@ -67,6 +67,12 @@ class NetworkService {
     this.socket.emit('game-move', move);
   }
 
+  // 进入游戏界面
+  joinGameView() {
+    if (!this.socket || !this.isConnected) return;
+    this.socket.emit('game-join');
+  }
+
   // 监听事件
   on<K extends keyof SocketEvents>(event: K, callback: SocketEvents[K]) {
     if (!this.socket) return;

@@ -41,6 +41,13 @@ const RoomManager: React.FC<RoomManagerProps> = ({ onGameStart: onGameStartProp,
       setPlayers(prev => prev.filter(p => p.id !== playerId));
     };
 
+    const onEnterGame = (payload: any) => {
+      // 进入游戏界面
+      if (roomRef.current) {
+        onGameStartProp(roomRef.current);
+      }
+    };
+
     const onError = (message: string) => {
       setError(message);
     };
@@ -49,7 +56,7 @@ const RoomManager: React.FC<RoomManagerProps> = ({ onGameStart: onGameStartProp,
     NetworkService.on('room-joined', onRoomJoined as any);
     NetworkService.on('player-joined', onPlayerJoined as any);
     NetworkService.on('player-left', onPlayerLeft as any);
-    // 不在房间页消费 game-start，避免游戏组件未挂载时错过事件
+    NetworkService.on('enter-game', onEnterGame as any);
     NetworkService.on('error', onError as any);
 
     return () => {
@@ -57,7 +64,7 @@ const RoomManager: React.FC<RoomManagerProps> = ({ onGameStart: onGameStartProp,
       NetworkService.off('room-joined', onRoomJoined as any);
       NetworkService.off('player-joined', onPlayerJoined as any);
       NetworkService.off('player-left', onPlayerLeft as any);
-      // no-op
+      NetworkService.off('enter-game', onEnterGame as any);
       NetworkService.off('error', onError as any);
     };
   }, []); // 仅挂载/卸载时执行
@@ -97,13 +104,7 @@ const RoomManager: React.FC<RoomManagerProps> = ({ onGameStart: onGameStartProp,
     if (players.length === 2) {
       console.log('开始游戏');
       try {
-        // 先切到游戏页，确保 NetworkReversiGame 挂载并监听后再发起开始
-        if (roomRef.current) {
-          onGameStartProp(roomRef.current);
-        }
-        setTimeout(() => {
-          NetworkService.startGame();
-        }, 50);
+        NetworkService.startGame(); // 或 NetworkService.startGame(currentRoom?.id || '')
       } catch (error) {
         setError('加入房间失败');
       }
