@@ -243,18 +243,71 @@ io.on('connection', (socket) => {
     }
   });
   
-  // 离开房间
-  socket.on('leave-room', (roomId, playerId) => {
-    const room = gameManager.leaveRoom(roomId, playerId);
-    socket.leave(roomId);
-    players.delete(socket.id);
-    
-    socket.emit('room-left');
-    if (room) {
-      socket.to(roomId).emit('player-left', playerId);
+  // 自动匹配：寻找未满且未开始的房间，否则创建新房间
+  socket.on('auto-match', (player) => {
+    try {
+      // 查找可加入的房间
+      let targetRoom = null;
+      for (const [rid, room] of gameManager.rooms.entries()) {
+        if (!room.isGameStarted && room.players.length < room.maxPlayers) {
+          targetRoom = room;
+          break;
+        }
+      }
+
+      const roomId = targetRoom ? targetRoom.id : `room_${Math.random().toString(36).slice(2, 8)}`;
+      const room = targetRoom ? gameManager.joinRoom(roomId, player) : gameManager.createRoom(roomId, player);
+
+      socket.join(roomId);
+      players.set(socket.id, { ...player, socketId: socket.id, roomId });
+
+      socket.emit('room-joined', room);
+      socket.to(roomId).emit('player-joined', player);
+
+      // 如果已满两人，立即通知双方进入游戏界面
+      if (room.players.length === room.maxPlayers) {
+        io.to(roomId).emit('enter-game', {
+          roomId: room.id,
+          players: room.players,
+          name: room.name,
+          maxPlayers: room.maxPlayers
+        });
+      }
+    } catch (error) {
+      socket.emit('error', error.message);
     }
-    
-    console.log(`玩家 ${playerId} 离开房间 ${roomId}`);
+  });
+
+  // 选择势力：记录在 players 映射中
+  socket.on('select-faction', (faction) => {
+    const p = players.get(socket.id);
+    if (!p) return;
+    p.faction = faction;
+    players.set(socket.id, p);
+  });
+  
+  // 离开房间：任一玩家离开则关闭房间并让所有玩家退出
+  socket.on('leave-room', async (roomId, playerId) => {
+    try {
+      // 通知房间内所有玩家房间关闭
+      io.to(roomId).emit('room-closed');
+      // 强制所有 socket 离开该房间
+      await io.in(roomId).socketsLeave(roomId);
+      // 清理 players 映射中属于该房间的玩家
+      const roomSocketIds = (io.sockets.adapter.rooms.get(roomId)) || new Set();
+      for (const sid of roomSocketIds) {
+        const p = players.get(sid);
+        if (p && p.roomId === roomId) players.delete(sid);
+      }
+      // 删除房间
+      gameManager.rooms.delete(roomId);
+      // 当前 socket 本人也做本地清理
+      players.delete(socket.id);
+      socket.emit('room-left');
+      console.log(`房间 ${roomId} 已关闭，因玩家 ${playerId} 离开`);
+    } catch (err) {
+      socket.emit('error', '关闭房间失败');
+    }
   });
   
   // 游戏移动
@@ -317,14 +370,21 @@ io.on('connection', (socket) => {
     }
   });
   
-  // 断开连接
-  socket.on('disconnect', () => {
+  // 断开连接：同样关闭所在房间
+  socket.on('disconnect', async () => {
     const player = players.get(socket.id);
     if (player) {
-      const room = gameManager.leaveRoom(player.roomId, player.id);
-      if (room) {
-        socket.to(player.roomId).emit('player-left', player.id);
-      }
+      const roomId = player.roomId;
+      try {
+        io.to(roomId).emit('room-closed');
+        await io.in(roomId).socketsLeave(roomId);
+        const roomSocketIds = (io.sockets.adapter.rooms.get(roomId)) || new Set();
+        for (const sid of roomSocketIds) {
+          const p = players.get(sid);
+          if (p && p.roomId === roomId) players.delete(sid);
+        }
+        gameManager.rooms.delete(roomId);
+      } catch {}
       players.delete(socket.id);
     }
     console.log('用户断开连接:', socket.id);

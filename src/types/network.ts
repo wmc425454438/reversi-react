@@ -3,6 +3,7 @@ export interface NetworkPlayer {
   name: string;
   avatar: string;
   isReady: boolean;
+  faction?: '魏' | '蜀' | '吴';
 }
 
 export interface GameRoom {
@@ -40,6 +41,7 @@ export interface SocketEvents {
   'room-left': () => void;
   'player-joined': (player: NetworkPlayer) => void;
   'player-left': (playerId: string) => void;
+  'room-closed': () => void;
   
   // 游戏相关
   'enter-game': (payload: any) => void;
@@ -47,6 +49,8 @@ export interface SocketEvents {
   'game-move': (move: NetworkMove) => void;
   'game-state-update': (gameState: NetworkGameState) => void;
   'game-over': (winner: string) => void;
+  // 势力选择
+  'select-faction': (faction: '魏' | '蜀' | '吴') => void;
   
   // 错误处理
   'error': (message: string) => void;

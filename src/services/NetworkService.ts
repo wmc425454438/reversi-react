@@ -6,6 +6,7 @@ class NetworkService {
   private isConnected = false;
   private currentPlayer: NetworkPlayer | null = null;
   private currentRoom: GameRoom | null = null;
+  private preferredFaction: '魏' | '蜀' | '吴' | null = null;
 
   constructor() {
     this.connect();
@@ -42,6 +43,33 @@ class NetworkService {
     this.socket.emit('join-room', roomId, player);
   }
 
+  // 自动匹配
+  autoMatch(player: NetworkPlayer) {
+    if (!this.socket || !this.isConnected) {
+      throw new Error('未连接到服务器');
+    }
+    this.currentPlayer = player;
+    this.socket.emit('auto-match', player);
+  }
+
+  // 选择势力
+  selectFaction(faction: '魏' | '蜀' | '吴') {
+    if (!this.socket || !this.isConnected) return;
+    this.socket.emit('select-faction', faction);
+    if (this.currentPlayer) {
+      this.currentPlayer.faction = faction;
+    }
+  }
+
+  // 预先记录偏好势力（未连接或未创建玩家时使用）
+  setPreferredFaction(faction: '魏' | '蜀' | '吴') {
+    this.preferredFaction = faction;
+  }
+
+  getPreferredFaction() {
+    return this.preferredFaction;
+  }
+
   // 开始游戏
   startGame() {
     if (!this.socket || !this.isConnected) {
@@ -58,6 +86,16 @@ class NetworkService {
     this.socket.emit('leave-room', this.currentRoom.id, this.currentPlayer?.id);
     this.currentRoom = null;
     this.currentPlayer = null;
+  }
+
+  // 监听房间关闭（便捷方法，可在组件里直接绑定事件）
+  onRoomClosed(callback: () => void) {
+    if (!this.socket) return;
+    this.socket.on('room-closed', callback);
+  }
+  offRoomClosed(callback?: () => void) {
+    if (!this.socket) return;
+    this.socket.off('room-closed', callback as any);
   }
 
   // 发送游戏移动

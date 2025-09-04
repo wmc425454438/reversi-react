@@ -39,6 +39,27 @@ html, body {
   position: relative;
 }
 
+/* 联机对战容器：竖屏垂直居中棋盘与血条 */
+.network-reversi-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100vw;
+  height: 100vh;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+/* 顶部/底部血条与棋盘的垂直间距更紧凑，整体更聚焦中间 */
+.network-reversi-container .player {
+  margin: 8px 0;
+}
+
+.network-reversi-container .desk-table {
+  margin: 12px 0;
+}
+
 /* 动态计算棋盘大小 */
 .desk-table {
   position: relative;
@@ -47,8 +68,8 @@ html, body {
   overflow: hidden;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
   /* 根据屏幕高度动态调整大小 */
-  max-width: min(90vw, calc(100vh - 200px));
-  max-height: min(90vw, calc(100vh - 200px));
+  width: min(90vw, calc(100vh - 220px));
+  height: min(90vw, calc(100vh - 220px));
 }
 
 .desk-table canvas {
@@ -65,13 +86,14 @@ html, body {
   border-collapse: collapse;
   background: transparent;
   border: 3px solid #654321;
+  table-layout: fixed;
   width: 100%;
   height: 100%;
 }
 
 .desk-table td {
-  width: 54px;
-  height: 54px;
+  width: auto;
+  height: auto;
   border: 1px solid #654321;
   padding: 0;
   cursor: pointer;
@@ -114,9 +136,14 @@ html, body {
   width: 10px;
   height: 10px;
   padding: 17px;
-  border-radius: 50%;
   position: relative;
   transition: all 0.3s ease;
+}
+
+.chess-inner {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
 }
 
 .chess-orange {
@@ -377,6 +404,11 @@ html, body {
   transform-origin: center bottom;
   overflow: hidden;
   z-index: 1;
+}
+
+/* 拖拽中半透明 */
+.character-card.dragging {
+  opacity: 0.4;
 }
 
 /* 卡牌堆叠位置 - 动态调整 */

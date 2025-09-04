@@ -4,39 +4,19 @@ export interface Character {
   _combo?: number;
   _description: string;
   _image?: string;
+  _faction?: '魏' | '蜀' | '吴';
 }
 
-export const Liubei: Character = {
-  _name: "刘备",
-  _attack: 15,
-  _combo: 5,
-  _description: "仁德之主，攻击力中等，连击伤害稳定"
-};
+export * from './wei.ts';
+export * from './shu.ts';
+export * from './wu.ts';
 
-export const Guanyu: Character = {
-  _name: "关羽",
-  _attack: 20,
-  _combo: 8,
-  _description: "武圣关羽，攻击力最高，连击伤害惊人"
-};
+// 分组导出便于按势力筛选
+import * as Wei from './wei.ts';
+import * as Shu from './shu.ts';
+import * as Wu from './wu.ts';
 
-export const Zhangfei: Character = {
-  _name: "张飞",
-  _attack: 18,
-  _combo: 6,
-  _description: "猛将张飞，攻击力较高，连击伤害可观"
-};
-
-export const ZhaoYun: Character = {
-  _name: "赵云",
-  _attack: 16,
-  _combo: 7,
-  _description: "常山赵子龙，攻击力稳定，连击伤害优秀"
-};
-
-export const MaChao: Character = {
-  _name: "马超",
-  _attack: 19,
-  _combo: 4,
-  _description: "西凉马超，攻击力极高，连击伤害一般"
-};
+export const WeiCharacters: Character[] = Object.values(Wei) as unknown as Character[];
+export const ShuCharacters: Character[] = Object.values(Shu) as unknown as Character[];
+export const WuCharacters: Character[] = Object.values(Wu) as unknown as Character[];
+export const AllCharacters: Character[] = [...WeiCharacters, ...ShuCharacters, ...WuCharacters];

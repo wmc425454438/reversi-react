@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Player } from '../models/Player';
-import { Liubei, Guanyu, Zhangfei, ZhaoYun, MaChao } from '../models/characters';
+import { WeiCharacters, ShuCharacters, WuCharacters } from '../models/characters';
 import type { Character } from '../models/characters';
 import type { ChessPiece, GameState } from '../types/reversi';
 import type { NetworkMove, NetworkGameState, GameRoom } from '../types/network';
@@ -58,6 +58,19 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
       }
     }
 
+    setGameState(prev => ({ ...prev, tableArr: newBoard }));
+  }, []);
+
+  // 清除所有可落子标记
+  const clearMoveableArea = useCallback((board: ChessPiece[][]) => {
+    const newBoard = board.map(row => row.map(cell => ({ ...cell })));
+    for (let i = 0; i < BOARD_SIZE; i++) {
+      for (let j = 0; j < BOARD_SIZE; j++) {
+        if (newBoard[i][j].type === 3) {
+          newBoard[i][j].type = 0;
+        }
+      }
+    }
     setGameState(prev => ({ ...prev, tableArr: newBoard }));
   }, []);
 
@@ -215,7 +228,11 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
 
   // 获取所有角色卡牌
   const getAllCharacters = (): Character[] => {
-    return [Liubei, Guanyu, Zhangfei, ZhaoYun, MaChao];
+    const faction = NetworkService.getCurrentPlayer()?.faction || NetworkService.getPreferredFaction?.();
+    if (faction === '魏') return WeiCharacters;
+    if (faction === '吴') return WuCharacters;
+    // 默认蜀
+    return ShuCharacters;
   };
 
   // 获取可用的角色卡牌
@@ -231,23 +248,37 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
     }
     // 监听游戏状态更新
     NetworkService.on('game-state-update', (networkGameState: NetworkGameState) => {
-      // 将网络游戏状态转换为本地游戏状态
+      // 将网络游戏状态转换为本地游戏状态（保留服务端下发的血量）
+      const p1 = new Player(networkGameState.player1._name, "", 1);
+      const p2 = new Player(networkGameState.player2._name, "", 2);
+      if (typeof networkGameState.player1._hp === 'number') {
+        p1._hp = networkGameState.player1._hp;
+      }
+      if (typeof networkGameState.player2._hp === 'number') {
+        p2._hp = networkGameState.player2._hp;
+      }
+
       const newGameState: GameState = {
         tableArr: networkGameState.tableArr,
         lastMove: networkGameState.lastMove,
-        player1: new Player(networkGameState.player1._name, "", 1),
-        player2: new Player(networkGameState.player2._name, "", 2),
+        player1: p1,
+        player2: p2,
         gameOver: networkGameState.gameOver,
         threeDimensionsOn: false
       };
 
       setGameState(newGameState);
       setCurrentPlayerId(networkGameState.currentPlayer);
-      setIsMyTurn(networkGameState.currentPlayer === (myId || NetworkService.getCurrentPlayer()?.id));
+      const isMine = networkGameState.currentPlayer === (myId || NetworkService.getCurrentPlayer()?.id);
+      setIsMyTurn(isMine);
 
-      // 根据当前客户端所属阵营，计算可落子区域
+      // 仅在自己的回合标记可落子区，否则清除
       const myType = room.players[0]?.id === currentPlayer?.id ? 1 : 2;
-      calculateMoveableArea(networkGameState.tableArr as unknown as ChessPiece[][], myType);
+      if (isMine) {
+        calculateMoveableArea(networkGameState.tableArr as unknown as ChessPiece[][], myType);
+      } else {
+        clearMoveableArea(networkGameState.tableArr as unknown as ChessPiece[][]);
+      }
 
       if (networkGameState.gameOver) {
         setGameOverModalVisible(true);
@@ -277,21 +308,35 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
       console.log('networkGameState', networkGameState);
       console.log('room.players', room.players);
       console.log('currentPlayer', currentPlayer);
+      const p1 = new Player(networkGameState.player1._name, "", 1);
+      const p2 = new Player(networkGameState.player2._name, "", 2);
+      if (typeof networkGameState.player1._hp === 'number') {
+        p1._hp = networkGameState.player1._hp;
+      }
+      if (typeof networkGameState.player2._hp === 'number') {
+        p2._hp = networkGameState.player2._hp;
+      }
+
       const newGameState: GameState = {
         tableArr: networkGameState.tableArr,
         lastMove: networkGameState.lastMove,
-        player1: new Player(networkGameState.player1._name, "", 1),
-        player2: new Player(networkGameState.player2._name, "", 2),
+        player1: p1,
+        player2: p2,
         gameOver: networkGameState.gameOver,
         threeDimensionsOn: false
       };
 
       setGameState(newGameState);
       setCurrentPlayerId(networkGameState.currentPlayer);
-      setIsMyTurn(networkGameState.currentPlayer === (myId || NetworkService.getCurrentPlayer()?.id));
+      const isMine = networkGameState.currentPlayer === (myId || NetworkService.getCurrentPlayer()?.id);
+      setIsMyTurn(isMine);
 
       const myType = room.players[0]?.id === currentPlayer?.id ? 1 : 2;
-      calculateMoveableArea(networkGameState.tableArr as unknown as ChessPiece[][], myType);
+      if (isMine) {
+        calculateMoveableArea(networkGameState.tableArr as unknown as ChessPiece[][], myType);
+      } else {
+        clearMoveableArea(networkGameState.tableArr as unknown as ChessPiece[][]);
+      }
     };
 
     NetworkService.on('game-start', onGameStart as any);
@@ -326,6 +371,7 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
   // 拖拽：结束
   const handleCardDragEnd = () => {
     setIsDragging(false);
+    // 拖拽结束后，若未成功落子，恢复手牌显示（selectedCard 已保留）
   };
 
   // 触摸：开始
@@ -388,6 +434,17 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
     onGameEnd();
   };
 
+  // 被动接收房间关闭，退出到上一级
+  useEffect(() => {
+    const onClosed = () => {
+      onGameEnd();
+    };
+    NetworkService.on('room-closed', onClosed as any);
+    return () => {
+      NetworkService.off('room-closed', onClosed as any);
+    };
+  }, []);
+
   return (
     <div className="network-reversi-container">
       {/* 游戏信息 */}
@@ -395,21 +452,28 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
         <div className="current-player">
           当前回合: {currentPlayerId && (currentPlayerId === (myId || NetworkService.getCurrentPlayer()?.id)) ? '您' : '对手'}
         </div>
-        <div className="room-info">
+        {/* <div className="room-info">
           房间: {room.name} ({room.players.length}/2)
-        </div>
+        </div> */}
       </div>
 
-      {/* 玩家1血条 */}
-      <div className="player">
-        <div
-          className="player-hp"
-          style={{ width: `${(gameState.player1._hp / INITIAL_HP) * 100}%` }}
-        />
-        <div className="player-hp--ratio">
-          {gameState.player1._name}: {gameState.player1._hp}/{INITIAL_HP}
-        </div>
-      </div>
+      {/* 顶部：对手血条（根据当前用户阵营动态切换） */}
+      {(() => {
+        const me = NetworkService.getCurrentPlayer();
+        const myType = room.players[0]?.id === me?.id ? 1 : 2;
+        const oppPlayer = myType === 1 ? gameState.player2 : gameState.player1;
+        return (
+          <div className="player">
+            <div
+              className="player-hp"
+              style={{ width: `${(oppPlayer._hp / INITIAL_HP) * 100}%` }}
+            />
+            <div className="player-hp--ratio">
+              {oppPlayer._hp}/{INITIAL_HP}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 棋盘 */}
       <div className="desk-table">
@@ -433,11 +497,12 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
                           String(col.character._name).substr(0, 1).toUpperCase() : ''}
                       </div>
                       <div
-                        className={`chess ${col.type === 1 ? 'chess-orange' :
-                            col.type === 2 ? 'chess-blue' :
-                              col.type === 3 ? 'chess-movable' : ''
-                          } ${col.reversal ? 'chess-rotate' : ''}`}
-                      />
+                        className={`chess ${col.type === 3 ? 'chess-movable' : ''}`}
+                      >
+                        <div
+                          className={`chess-inner ${col.type === 1 ? 'chess-orange' : col.type === 2 ? 'chess-blue' : ''} ${col.reversal ? 'chess-rotate' : ''}`}
+                        />
+                      </div>
                     </div>
                   </td>
                 ))}
@@ -447,16 +512,23 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
         </table>
       </div>
 
-      {/* 玩家2血条 */}
-      <div className="player">
-        <div
-          className="player-hp"
-          style={{ width: `${(gameState.player2._hp / INITIAL_HP) * 100}%` }}
-        />
-        <div className="player-hp--ratio">
-          {gameState.player2._name}: {gameState.player2._hp}/{INITIAL_HP}
-        </div>
-      </div>
+      {/* 底部：自己血条（根据当前用户阵营动态切换） */}
+      {(() => {
+        const me = NetworkService.getCurrentPlayer();
+        const myType = room.players[0]?.id === me?.id ? 1 : 2;
+        const selfPlayer = myType === 1 ? gameState.player1 : gameState.player2;
+        return (
+          <div className="player">
+            <div
+              className="player-hp"
+              style={{ width: `${(selfPlayer._hp / INITIAL_HP) * 100}%` }}
+            />
+            <div className="player-hp--ratio">
+              {selfPlayer._hp}/{INITIAL_HP}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 卡牌区域 */}
       <div className="card-section">
@@ -464,9 +536,13 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
           {getAvailableCharacters().map((character, index) => (
             <div
               key={index}
-              className={`character-card ${selectedCard?._name === character._name ? 'selected' : ''} ${!isMyTurn ? 'disabled' : ''}`}
+              className={`character-card ${selectedCard?._name === character._name ? 'selected' : ''} ${!isMyTurn ? 'disabled' : ''} ${isDragging && selectedCard?._name === character._name ? 'dragging' : ''}`}
               draggable
               onDragStart={(e) => handleCardDragStart(e, character)}
+              onDrag={(e) => {
+                if (!isDragging) return;
+                setDragPosition({ x: e.clientX, y: e.clientY });
+              }}
               onDragEnd={handleCardDragEnd}
               onClick={() => handleCardClick(character)}
               onTouchStart={(e) => handleTouchStart(e, character)}
@@ -494,6 +570,24 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
           离开游戏
         </button>
       </div>
+
+      {/* 拖拽预览棋子 */}
+      {isDragging && selectedCard && (
+        (() => {
+          const me = NetworkService.getCurrentPlayer();
+          const myType = room.players[0]?.id === me?.id ? 1 : 2;
+          return (
+            <div
+              className={`drag-preview ${myType === 1 ? 'player1' : 'player2'}`}
+              style={{ left: dragPosition.x, top: dragPosition.y }}
+            >
+              <div className="drag-preview-character">
+                {String(selectedCard._name).substr(0, 1).toUpperCase()}
+              </div>
+            </div>
+          );
+        })()
+      )}
 
       {/* 游戏结束弹窗 */}
       {gameOverModalVisible && (
