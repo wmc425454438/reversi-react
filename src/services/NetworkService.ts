@@ -14,9 +14,11 @@ class NetworkService {
 
   private connect() {
     // 连接到本地服务器，生产环境需要修改为实际服务器地址
-    this.socket = io('http://localhost:3001', {
-      transports: ['websocket', 'polling']
-    });
+    const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
+    this.socket = io(SERVER_URL, { transports: ['websocket', 'polling'] });
+    // this.socket = io('http://localhost:3001', {
+    //   transports: ['websocket', 'polling']
+    // });
 
     this.socket.on('connect', () => {
       console.log('已连接到服务器');

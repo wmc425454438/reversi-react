@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Player } from '../models/Player';
 import { WeiCharacters, ShuCharacters, WuCharacters } from '../models/characters';
 import type { Character } from '../models/characters';
@@ -27,12 +27,17 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
 
   const [selectedCard, setSelectedCard] = useState<Character | null>(null);
   const [usedCards, setUsedCards] = useState<Set<string>>(new Set());
+  const [hand, setHand] = useState<Character[]>([]);
   const [currentPlayerId, setCurrentPlayerId] = useState<string>('');
   const [isMyTurn, setIsMyTurn] = useState(false);
   const [gameOverModalVisible, setGameOverModalVisible] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
   const [myId, setMyId] = useState<string>('');
+  const [confirmLeaveVisible, setConfirmLeaveVisible] = useState(false);
+  const [roomClosedModalVisible, setRoomClosedModalVisible] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const deskRef = useRef<HTMLDivElement | null>(null);
 
   const currentPlayer = NetworkService.getCurrentPlayer();
 
@@ -213,8 +218,16 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
       lastMove: nextPlayerType
     }));
 
-    // 标记卡牌为已用
-    setUsedCards(prev => new Set([...prev, (selectedCard as Character)._name]));
+    // 从手牌移除已使用的卡（移除一张匹配的）
+    setHand(prev => {
+      const idx = prev.findIndex(c => c._name === (selectedCard as Character)._name);
+      if (idx >= 0) {
+        const copy = prev.slice();
+        copy.splice(idx, 1);
+        return copy;
+      }
+      return prev;
+    });
 
     // 计算对手的可落子区域
     calculateMoveableArea(newBoard, nextPlayerType);
@@ -224,9 +237,11 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
 
     // 清除选中的卡牌
     setSelectedCard(null);
+    // 落子后清空预览
+    clearCanvas();
   }, [isMyTurn, gameState.tableArr, selectedCard, currentPlayer]);
 
-  // 获取所有角色卡牌
+  // 获取势力牌库
   const getAllCharacters = (): Character[] => {
     const faction = NetworkService.getCurrentPlayer()?.faction || NetworkService.getPreferredFaction?.();
     if (faction === '魏') return WeiCharacters;
@@ -237,8 +252,27 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
 
   // 获取可用的角色卡牌
   const getAvailableCharacters = (): Character[] => {
-    return getAllCharacters().filter(character => !usedCards.has(character._name));
+    return hand;
   };
+
+  // 生成初始手牌（5张，最多2张相同角色）
+  const generateInitialHand = useCallback(() => {
+    const pool = getAllCharacters();
+    const counts = new Map<string, number>();
+    const result: Character[] = [];
+    if (pool.length === 0) return result;
+    while (result.length < 5) {
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      const name = pick._name;
+      const cnt = counts.get(name) || 0;
+      if (cnt < 2) {
+        result.push(pick);
+        counts.set(name, cnt + 1);
+      }
+      // 若池子过小仍可继续循环，最多重复到2张
+    }
+    return result;
+  }, []);
 
   // 监听网络事件
   useEffect(() => {
@@ -337,6 +371,9 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
       } else {
         clearMoveableArea(networkGameState.tableArr as unknown as ChessPiece[][]);
       }
+
+      // 初始化手牌
+      setHand(generateInitialHand());
     };
 
     NetworkService.on('game-start', onGameStart as any);
@@ -351,7 +388,7 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
   }, []);
 
   const handleCardClick = (character: Character) => {
-    if (!isMyTurn || usedCards.has(character._name)) {
+    if (!isMyTurn) {
       return;
     }
     setSelectedCard(character);
@@ -359,7 +396,7 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
 
   // 拖拽：开始
   const handleCardDragStart = (e: React.DragEvent, character: Character) => {
-    if (!isMyTurn || usedCards.has(character._name)) {
+    if (!isMyTurn) {
       e.preventDefault();
       return;
     }
@@ -372,11 +409,12 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
   const handleCardDragEnd = () => {
     setIsDragging(false);
     // 拖拽结束后，若未成功落子，恢复手牌显示（selectedCard 已保留）
+    clearCanvas();
   };
 
   // 触摸：开始
   const handleTouchStart = (e: React.TouchEvent, character: Character) => {
-    if (!isMyTurn || usedCards.has(character._name)) {
+    if (!isMyTurn) {
       return;
     }
     setSelectedCard(character);
@@ -390,6 +428,14 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
     if (!isDragging) return;
     const t = e.touches[0];
     setDragPosition({ x: t.clientX, y: t.clientY });
+    // 预览：触摸移动时根据指尖所在格子计算连线
+    const el = document.elementFromPoint(t.clientX, t.clientY);
+    const td = el?.closest('td') as HTMLTableCellElement | null;
+    if (!td) { clearCanvas(); return; }
+    const rowIndex = parseInt(td.getAttribute('data-row') || '');
+    const colIndex = parseInt(td.getAttribute('data-col') || '');
+    if (Number.isNaN(rowIndex) || Number.isNaN(colIndex)) { clearCanvas(); return; }
+    previewComboLines(rowIndex, colIndex);
   };
 
   // 触摸：结束，投递到目标格
@@ -413,6 +459,13 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
     e.preventDefault();
   };
 
+  // 单元格级拖拽覆盖：实时预览可能的连击连线
+  const handleCellDragOver = (e: React.DragEvent, row: number, col: number) => {
+    e.preventDefault();
+    if (!isDragging) return;
+    previewComboLines(row, col);
+  };
+
   // 桌面拖拽：放置
   const handleBoardDrop = (e: React.DragEvent, row: number, col: number) => {
     e.preventDefault();
@@ -426,18 +479,177 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
     setGameOverModalVisible(false);
     setUsedCards(new Set());
     setSelectedCard(null);
+    setHand(generateInitialHand());
     initGame();
   };
 
+  // 计算某格中心点（相对棋盘容器）
+  const getCellCenter = (r: number, c: number): { x: number; y: number } | null => {
+    const desk = deskRef.current;
+    if (!desk) return null;
+    const table = desk.querySelector('table');
+    if (!table) return null;
+    const td = table.querySelector(`td[data-row="${r}"][data-col="${c}"]`) as HTMLTableCellElement | null;
+    if (!td) return null;
+    const rect = td.getBoundingClientRect();
+    const drect = desk.getBoundingClientRect();
+    return { x: rect.left - drect.left + rect.width / 2, y: rect.top - drect.top + rect.height / 2 };
+  };
+
+  // 画布尺寸同步至棋盘容器
+  const resizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const desk = deskRef.current;
+    if (canvas && desk) {
+      const rect = desk.getBoundingClientRect();
+      canvas.width = Math.floor(rect.width);
+      canvas.height = Math.floor(rect.height);
+    }
+  }, []);
+
+  useEffect(() => {
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('orientationchange', resizeCanvas);
+    return () => {
+      window.removeEventListener('resize', resizeCanvas);
+      window.removeEventListener('orientationchange', resizeCanvas);
+    };
+  }, [resizeCanvas]);
+
+  // 清空画布
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  };
+
+  // 动画：多条抖动曲线叠加，沿起止点之间的路径抖动（不使用线段生长）
+  const animateComboLines = (segments: Array<{ from: { x: number; y: number }, to: { x: number; y: number } }>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const duration = 600; // ms
+    const start = performance.now();
+    // 为每条段生成若干层参数
+    const layers = 4; // 曲线层数
+    const layerParams = Array.from({ length: layers }, (_, i) => ({
+      amp: 6 - i * 1.2, // 抖动幅度递减
+      freq: 2 + i,      // 频率不同
+      phase: Math.random() * Math.PI * 2,
+      alpha: 0.35 - i * 0.06,
+      width: 3 - i * 0.5
+    }));
+
+    const step = (now: number) => {
+      const prog = Math.min(1, (now - start) / duration);
+      clearCanvas();
+      for (const seg of segments) {
+        const dx = seg.to.x - seg.from.x;
+        const dy = seg.to.y - seg.from.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len;
+        const uy = dy / len;
+        // 法向量
+        const nx = -uy;
+        const ny = ux;
+
+        for (const lp of layerParams) {
+          ctx.beginPath();
+          ctx.lineWidth = Math.max(1, lp.width);
+          ctx.strokeStyle = '#fff70e';
+          ctx.globalAlpha = Math.max(0, lp.alpha * (0.8 + 0.2 * Math.sin(now * 0.01)));
+          ctx.shadowColor = 'rgba(255, 247, 14, 0.8)';
+          ctx.shadowBlur = 8;
+
+          const segmentsCount = 24; // 采样点
+          for (let i = 0; i <= segmentsCount; i++) {
+            // 让可见长度随进度变化，避免静止
+            const vis = Math.min(1, 0.6 + prog * 0.5);
+            const tt = (i / segmentsCount) * vis;
+            const baseX = seg.from.x + dx * tt;
+            const baseY = seg.from.y + dy * tt;
+            const wobble = lp.amp * Math.sin((tt * lp.freq * Math.PI * 2) + lp.phase + now * 0.02);
+            const px = baseX + nx * wobble;
+            const py = baseY + ny * wobble;
+            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+          }
+          ctx.stroke();
+        }
+      }
+      ctx.globalAlpha = 1;
+      if (prog < 1) {
+        requestAnimationFrame(step);
+      } else {
+        // 结束后轻微余晖再清空
+        setTimeout(clearCanvas, 120);
+      }
+    };
+    requestAnimationFrame(step);
+  };
+
+  // 预览：根据当前位置计算潜在连击连线
+  const previewComboLines = (row: number, col: number) => {
+    if (!selectedCard || !isMyTurn) { clearCanvas(); return; }
+    const cell = gameState.tableArr[row]?.[col];
+    if (!cell || cell.type !== 3) { clearCanvas(); return; }
+    const me = NetworkService.getCurrentPlayer();
+    const myType = room.players[0]?.id === me?.id ? 1 : 2;
+    const enemyType = myType === 1 ? 2 : 1;
+    const directions = [
+      [-1, 0], [1, 0], [0, -1], [0, 1],
+      [-1, -1], [-1, 1], [1, -1], [1, 1]
+    ];
+    const segments: Array<{ from: { x: number; y: number }, to: { x: number; y: number } }> = [];
+    for (const [dx, dy] of directions) {
+      let x = row + dx;
+      let y = col + dy;
+      let seenEnemy = false;
+      while (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE) {
+        const t = gameState.tableArr[x][y].type;
+        if (t === enemyType) { seenEnemy = true; x += dx; y += dy; continue; }
+        if (t === myType) {
+          if (seenEnemy) {
+            const closerCell = gameState.tableArr[x][y];
+            const hasCombo = closerCell && closerCell.character && typeof closerCell.character === 'object' && '_combo' in closerCell.character && Number((closerCell.character as any)._combo) > 0;
+            if (hasCombo) {
+              const from = getCellCenter(row, col);
+              const to = getCellCenter(x, y);
+              if (from && to) segments.push({ from, to });
+            }
+          }
+        }
+        break;
+      }
+    }
+    if (segments.length > 0) {
+      animateComboLines(segments);
+    } else {
+      clearCanvas();
+    }
+  };
+
   const handleLeaveGame = () => {
+    setConfirmLeaveVisible(true);
+  };
+
+  const confirmLeave = () => {
+    setConfirmLeaveVisible(false);
     NetworkService.leaveRoom();
     onGameEnd();
   };
 
-  // 被动接收房间关闭，退出到上一级
+  const cancelLeave = () => {
+    setConfirmLeaveVisible(false);
+  };
+
+  // 被动接收房间关闭，提示游戏已结束
   useEffect(() => {
     const onClosed = () => {
-      onGameEnd();
+      setRoomClosedModalVisible(true);
     };
     NetworkService.on('room-closed', onClosed as any);
     return () => {
@@ -476,7 +688,8 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
       })()}
 
       {/* 棋盘 */}
-      <div className="desk-table">
+      <div className="desk-table" ref={deskRef}>
+        <canvas ref={canvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 2, pointerEvents: 'none' }} />
         <table onDragOver={handleBoardDragOver}>
           <tbody>
             {gameState.tableArr.map((row, rowIndex) => (
@@ -487,7 +700,7 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
                     data-row={rowIndex}
                     data-col={colIndex}
                     onClick={() => moveChess(rowIndex, colIndex)}
-                    onDragOver={handleBoardDragOver}
+                    onDragOver={(e) => { handleBoardDragOver(e); handleCellDragOver(e, rowIndex, colIndex); }}
                     onDrop={(e) => handleBoardDrop(e, rowIndex, colIndex)}
                     className={col.type === 3 ? 'drop-zone' : ''}
                   >
@@ -602,6 +815,31 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
               <button onClick={handleLeaveGame} className="leave-btn">
                 离开游戏
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 确认离开弹窗（自己点击离开时） */}
+      {confirmLeaveVisible && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <h3>确定离开吗？</h3>
+            <div className="modal-buttons">
+              <button onClick={confirmLeave} className="leave-btn">确定</button>
+              <button onClick={cancelLeave} className="restart-btn">取消</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 房间关闭弹窗（其他玩家看到） */}
+      {roomClosedModalVisible && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <h3>游戏已结束</h3>
+            <div className="modal-buttons">
+              <button onClick={() => onGameEnd()} className="leave-btn">确定</button>
             </div>
           </div>
         </div>

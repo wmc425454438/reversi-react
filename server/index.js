@@ -11,7 +11,7 @@ app.use(cors());
 
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:3000", // Vite开发服务器地址
+    origin: "http://172.20.10.3:3000", // Vite开发服务器地址
     methods: ["GET", "POST"]
   }
 });
