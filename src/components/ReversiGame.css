@@ -171,6 +171,13 @@ html, body {
   }
 }
 
+/* 连击效果样式 */
+.combo-available .chess-movable::after {
+  background-color: #888;
+  border: 3px solid #ffd700;
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.6);
+}
+
 .chess-rotate {
   animation: rotate 0.5s ease-in-out;
 }

@@ -244,13 +244,26 @@
   position: absolute;
   inset: -6px;
   border-radius: 9999px;
-  border: 2px dashed rgba(34, 197, 94, 0.65);
+  border: 2px solid rgba(34, 197, 94, 0.65);
   animation: pulse-green 1.2s ease-in-out infinite;
   pointer-events: none;
   top: 50%;
   left: 50%;
 }
 @keyframes pulse-green {
+  0% { transform: translate(-50%, -50%) scale(0.95); opacity: 0.7; }
+  50% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(0.95); opacity: 0.7; }
+}
+
+/* 连击效果样式 */
+.combo-available .chess-movable::after {
+  border: 3px solid #ffd700 !important;
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.6) !important;
+  animation: pulse-yellow 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-yellow {
   0% { transform: translate(-50%, -50%) scale(0.95); opacity: 0.7; }
   50% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
   100% { transform: translate(-50%, -50%) scale(0.95); opacity: 0.7; }

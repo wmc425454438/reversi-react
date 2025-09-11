@@ -4,6 +4,7 @@ import { WeiCharacters, ShuCharacters, WuCharacters } from '../models/characters
 import type { Character } from '../models/characters';
 import type { ChessPiece, GameState } from '../types/reversi';
 import type { NetworkMove, NetworkGameState, GameRoom } from '../types/network';
+import { PlayerDeck, PlayerHand } from '../types/card';
 import NetworkService from '../services/NetworkService';
 import './ReversiGame.css';
 
@@ -22,7 +23,13 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
     player1: new Player("bot1", "", 1),
     player2: new Player("bot2", "", 2),
     gameOver: false,
-    threeDimensionsOn: false
+    threeDimensionsOn: false,
+    // 牌组系统
+    player1Deck: new PlayerDeck('魏'),
+    player2Deck: new PlayerDeck('魏'),
+    player1Hand: new PlayerHand(5),
+    player2Hand: new PlayerHand(5),
+    currentPlayerFaction: null
   });
 
   const [selectedCard, setSelectedCard] = useState<Character | null>(null);
@@ -95,13 +102,35 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
     board[3][2] = { type: 2, reversal: true, character: {} };
     board[3][3] = { type: 1, reversal: true, character: {} };
 
+    // 获取玩家势力
+    const currentPlayer = NetworkService.getCurrentPlayer();
+    const playerFaction = currentPlayer?.faction || '魏';
+    
+    // 初始化牌组
+    const player1Deck = new PlayerDeck(playerFaction);
+    const player2Deck = new PlayerDeck(playerFaction);
+    const player1Hand = new PlayerHand(5);
+    const player2Hand = new PlayerHand(5);
+    
+    // 打印初始牌组信息
+    console.log(`=== 游戏初始化 - ${playerFaction}势力 ===`);
+    console.log(`玩家1牌组: ${player1Deck.getRemainingCards()}张卡牌`);
+    console.log(`玩家2牌组: ${player2Deck.getRemainingCards()}张卡牌`);
+    console.log(`玩家1手牌: ${player1Hand.getCardCount()}张卡牌`);
+    console.log(`玩家2手牌: ${player2Hand.getCardCount()}张卡牌`);
+
     setGameState(prev => ({
       ...prev,
       tableArr: board,
       lastMove: 1,
       player1: new Player(room.players[0]?.name || "玩家1", "", 1),
       player2: new Player(room.players[1]?.name || "玩家2", "", 2),
-      gameOver: false
+      gameOver: false,
+      player1Deck,
+      player2Deck,
+      player1Hand,
+      player2Hand,
+      currentPlayerFaction: playerFaction
     }));
     calculateMoveableArea(board, 1);
   }, [calculateMoveableArea]);
@@ -140,7 +169,14 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
         }
         if (cellType === 0 || cellType === 3) {
           if (seenEnemy) {
-            board[x][y] = { type: 3, reversal: false, character: {} };
+            // 检查是否有连击效果
+            const hasCombo = checkComboEffect(board, x, y, playerType, enemyType);
+            board[x][y] = { 
+              type: 3, 
+              reversal: false, 
+              character: {},
+              hasCombo: hasCombo
+            };
           }
           break;
         }
@@ -148,6 +184,41 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
         break;
       }
     }
+  };
+
+  // 检查连击效果
+  const checkComboEffect = (board: ChessPiece[][], row: number, col: number, playerType: number, enemyType: number): boolean => {
+    const directions = [
+      [-1, 0], [1, 0], [0, -1], [0, 1],
+      [-1, -1], [-1, 1], [1, -1], [1, 1]
+    ];
+    
+    for (const [dx, dy] of directions) {
+      let x = row + dx;
+      let y = col + dy;
+      let seenEnemy = false;
+      
+      while (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE) {
+        const t = board[x][y].type;
+        if (t === enemyType) { 
+          seenEnemy = true; 
+          x += dx; 
+          y += dy; 
+          continue; 
+        }
+        if (t === playerType) {
+          if (seenEnemy) {
+            const closerCell = board[x][y];
+            const hasCombo = closerCell && closerCell.character && typeof closerCell.character === 'object' && '_combo' in closerCell.character && Number((closerCell.character as any)._combo) > 0;
+            if (hasCombo) {
+              return true;
+            }
+          }
+        }
+        break;
+      }
+    }
+    return false;
   };
 
   // 落子
@@ -229,6 +300,38 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
       return prev;
     });
 
+    // 从牌组抽取一张卡牌到手牌
+    const myDeck = myType === 1 ? gameState.player1Deck : gameState.player2Deck;
+    const myHand = myType === 1 ? gameState.player1Hand : gameState.player2Hand;
+    
+    // 打印当前牌组信息到控制台
+    console.log(`=== 玩家${myType}牌组信息 ===`);
+    console.log(`牌组剩余卡牌数量: ${myDeck.getRemainingCards()}`);
+    console.log(`手牌当前数量: ${myHand.getCardCount()}`);
+    console.log(`手牌是否已满: ${myHand.isFull()}`);
+    
+    const drawnCard = myDeck.drawCard();
+    if (drawnCard && !myHand.isFull()) {
+      myHand.addCard(drawnCard);
+      console.log(`抽取到卡牌: ${drawnCard.character._name} (ID: ${drawnCard.id})`);
+      console.log(`抽取后手牌数量: ${myHand.getCardCount()}`);
+      console.log(`抽取后牌组剩余: ${myDeck.getRemainingCards()}`);
+      
+      // 立即更新游戏状态中的手牌和牌组
+      setGameState(prev => ({
+        ...prev,
+        player1Hand: myType === 1 ? myHand : prev.player1Hand,
+        player2Hand: myType === 2 ? myHand : prev.player2Hand,
+        player1Deck: myType === 1 ? myDeck : prev.player1Deck,
+        player2Deck: myType === 2 ? myDeck : prev.player2Deck
+      }));
+      
+      // 更新手牌显示
+      setHand(myHand.getCards().map(card => card.character));
+    } else {
+      console.log('无法抽取卡牌:', drawnCard ? '手牌已满' : '牌组已空');
+    }
+
     // 计算对手的可落子区域
     calculateMoveableArea(newBoard, nextPlayerType);
 
@@ -237,8 +340,8 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
 
     // 清除选中的卡牌
     setSelectedCard(null);
-    // 落子后清空预览
-    clearCanvas();
+    // 落子后停止动画和清空预览
+    stopAnimation();
   }, [isMyTurn, gameState.tableArr, selectedCard, currentPlayer]);
 
   // 获取势力牌库
@@ -254,6 +357,44 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
   const getAvailableCharacters = (): Character[] => {
     return hand;
   };
+
+  // 检查并补充手牌
+  const checkAndRefillHand = useCallback((playerType: number) => {
+    const myHand = playerType === 1 ? gameState.player1Hand : gameState.player2Hand;
+    const myDeck = playerType === 1 ? gameState.player1Deck : gameState.player2Deck;
+    
+    console.log(`=== 回合开始前检查自己的手牌 (玩家${playerType}) ===`);
+    console.log(`当前手牌数量: ${myHand.getCardCount()}`);
+    console.log(`牌组剩余: ${myDeck.getRemainingCards()}`);
+    
+    // 如果手牌少于5张且牌组还有卡牌，则抽取一张
+    if (myHand.getCardCount() < 5 && myDeck.getRemainingCards() > 0) {
+      const drawnCard = myDeck.drawCard();
+      if (drawnCard) {
+        myHand.addCard(drawnCard);
+        console.log(`补充手牌: ${drawnCard.character._name} (ID: ${drawnCard.id})`);
+        console.log(`补充后手牌数量: ${myHand.getCardCount()}`);
+        
+        // 更新游戏状态
+        setGameState(prev => ({
+          ...prev,
+          player1Hand: playerType === 1 ? myHand : prev.player1Hand,
+          player2Hand: playerType === 2 ? myHand : prev.player2Hand,
+          player1Deck: playerType === 1 ? myDeck : prev.player1Deck,
+          player2Deck: playerType === 2 ? myDeck : prev.player2Deck
+        }));
+        
+        // 如果是当前玩家，更新手牌显示
+        if (playerType === (room.players[0]?.id === currentPlayer?.id ? 1 : 2)) {
+          setHand(myHand.getCards().map(card => card.character));
+        }
+      }
+    } else if (myHand.getCardCount() < 5) {
+      console.log('无法补充手牌: 牌组已空');
+    } else {
+      console.log('手牌已满，无需补充');
+    }
+  }, [gameState.player1Hand, gameState.player2Hand, gameState.player1Deck, gameState.player2Deck, currentPlayer, room.players]);
 
   // 生成初始手牌（5张，最多2张相同角色）
   const generateInitialHand = useCallback(() => {
@@ -298,7 +439,13 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
         player1: p1,
         player2: p2,
         gameOver: networkGameState.gameOver,
-        threeDimensionsOn: false
+        threeDimensionsOn: false,
+        // 保持现有的牌组信息
+        player1Deck: gameState.player1Deck,
+        player2Deck: gameState.player2Deck,
+        player1Hand: gameState.player1Hand,
+        player2Hand: gameState.player2Hand,
+        currentPlayerFaction: gameState.currentPlayerFaction
       };
 
       setGameState(newGameState);
@@ -309,6 +456,8 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
       // 仅在自己的回合标记可落子区，否则清除
       const myType = room.players[0]?.id === currentPlayer?.id ? 1 : 2;
       if (isMine) {
+        // 回合开始前检查自己的手牌
+        checkAndRefillHand(myType);
         calculateMoveableArea(networkGameState.tableArr as unknown as ChessPiece[][], myType);
       } else {
         clearMoveableArea(networkGameState.tableArr as unknown as ChessPiece[][]);
@@ -357,7 +506,13 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
         player1: p1,
         player2: p2,
         gameOver: networkGameState.gameOver,
-        threeDimensionsOn: false
+        threeDimensionsOn: false,
+        // 保持现有的牌组信息
+        player1Deck: gameState.player1Deck,
+        player2Deck: gameState.player2Deck,
+        player1Hand: gameState.player1Hand,
+        player2Hand: gameState.player2Hand,
+        currentPlayerFaction: gameState.currentPlayerFaction
       };
 
       setGameState(newGameState);
@@ -372,8 +527,20 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
         clearMoveableArea(networkGameState.tableArr as unknown as ChessPiece[][]);
       }
 
-      // 初始化手牌
-      setHand(generateInitialHand());
+      // 初始化手牌 - 从牌组抽取5张卡牌到手牌
+      const myDeck = myType === 1 ? gameState.player1Deck : gameState.player2Deck;
+      const myHand = myType === 1 ? gameState.player1Hand : gameState.player2Hand;
+      
+      // 从牌组抽取5张卡牌到手牌
+      for (let i = 0; i < 5 && !myHand.isFull(); i++) {
+        const card = myDeck.drawCard();
+        if (card) {
+          myHand.addCard(card);
+        }
+      }
+      
+      // 更新手牌显示
+      setHand(myHand.getCards().map(card => card.character));
     };
 
     NetworkService.on('game-start', onGameStart as any);
@@ -526,14 +693,13 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   };
 
-  // 动画：多条抖动曲线叠加，沿起止点之间的路径抖动（不使用线段生长）
+  // 动画：多条抖动曲线叠加，沿起止点之间的路径抖动（循环播放，线段始终连接）
   const animateComboLines = (segments: Array<{ from: { x: number; y: number }, to: { x: number; y: number } }>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const duration = 600; // ms
-    const start = performance.now();
+    
     // 为每条段生成若干层参数
     const layers = 4; // 曲线层数
     const layerParams = Array.from({ length: layers }, (_, i) => ({
@@ -545,7 +711,6 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
     }));
 
     const step = (now: number) => {
-      const prog = Math.min(1, (now - start) / duration);
       clearCanvas();
       for (const seg of segments) {
         const dx = seg.to.x - seg.from.x;
@@ -567,9 +732,8 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
 
           const segmentsCount = 24; // 采样点
           for (let i = 0; i <= segmentsCount; i++) {
-            // 让可见长度随进度变化，避免静止
-            const vis = Math.min(1, 0.6 + prog * 0.5);
-            const tt = (i / segmentsCount) * vis;
+            // 线段始终完整连接，不变化长度
+            const tt = i / segmentsCount;
             const baseX = seg.from.x + dx * tt;
             const baseY = seg.from.y + dy * tt;
             const wobble = lp.amp * Math.sin((tt * lp.freq * Math.PI * 2) + lp.phase + now * 0.02);
@@ -581,21 +745,39 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
         }
       }
       ctx.globalAlpha = 1;
-      if (prog < 1) {
-        requestAnimationFrame(step);
-      } else {
-        // 结束后轻微余晖再清空
-        setTimeout(clearCanvas, 120);
-      }
+      // 循环播放，使用animationRef管理
+      animationRef.current = requestAnimationFrame(step);
     };
-    requestAnimationFrame(step);
+    animationRef.current = requestAnimationFrame(step);
   };
+
+  // 存储当前动画的引用，用于停止循环动画
+  const animationRef = useRef<number | null>(null);
+
+  // 停止当前动画
+  const stopAnimation = () => {
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    }
+    clearCanvas();
+  };
+
+  // 组件卸载时停止动画
+  useEffect(() => {
+    return () => {
+      stopAnimation();
+    };
+  }, []);
 
   // 预览：根据当前位置计算潜在连击连线
   const previewComboLines = (row: number, col: number) => {
-    if (!selectedCard || !isMyTurn) { clearCanvas(); return; }
+    // 停止之前的动画
+    stopAnimation();
+    
+    if (!selectedCard || !isMyTurn) { return; }
     const cell = gameState.tableArr[row]?.[col];
-    if (!cell || cell.type !== 3) { clearCanvas(); return; }
+    if (!cell || cell.type !== 3) { return; }
     const me = NetworkService.getCurrentPlayer();
     const myType = room.players[0]?.id === me?.id ? 1 : 2;
     const enemyType = myType === 1 ? 2 : 1;
@@ -627,8 +809,6 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
     }
     if (segments.length > 0) {
       animateComboLines(segments);
-    } else {
-      clearCanvas();
     }
   };
 
@@ -702,7 +882,7 @@ const NetworkReversiGame: React.FC<NetworkReversiGameProps> = ({ room, onGameEnd
                     onClick={() => moveChess(rowIndex, colIndex)}
                     onDragOver={(e) => { handleBoardDragOver(e); handleCellDragOver(e, rowIndex, colIndex); }}
                     onDrop={(e) => handleBoardDrop(e, rowIndex, colIndex)}
-                    className={col.type === 3 ? 'drop-zone' : ''}
+                    className={`${col.type === 3 ? 'drop-zone' : ''} ${col.hasCombo ? 'combo-available' : ''}`}
                   >
                     <div className="element">
                       <div className={`chess-character ${col.character && typeof col.character === 'object' && '_name' in col.character ? '' : 'hidden'}`}>
